@@ -1,0 +1,1220 @@
+// Rust grammar for tree-sitter - native DSL version
+
+grammar {
+    language: "rust",
+    extras: [regexp(r"\s"), line_comment, block_comment],
+    externals: [
+        string_content, string_close,
+        _raw_string_literal_start, raw_string_literal_content, _raw_string_literal_end,
+        float_literal,
+        _outer_block_doc_comment_marker, _inner_block_doc_comment_marker,
+        _block_comment_content, _line_doc_content, _error_sentinel,
+    ],
+    supertypes: [_expression, _type, _literal, _literal_pattern, _declaration_statement, _pattern],
+    inline: [_path, _type_identifier, _tokens, _field_identifier, _non_special_token, _declaration_statement, _reserved_identifier, _expression_ending_with_block],
+    conflicts: [
+        [_type, _pattern],
+        [unit_type, tuple_pattern],
+        [scoped_identifier, scoped_type_identifier],
+        [parameters, _pattern],
+        [parameters, tuple_struct_pattern],
+        [array_expression],
+        [visibility_modifier],
+        [visibility_modifier, scoped_identifier, scoped_type_identifier],
+        [foreign_mod_item, function_modifiers],
+    ],
+    word: identifier,
+}
+
+let PREC = {
+    call: 15, fld: 14, try: 13, unary: 12, cast: 11,
+    multiplicative: 10, additive: 9, shift: 8, bitand: 7, bitxor: 6,
+    bitor: 5, comparative: 4, and: 3, or: 2, range: 1, assign: 0,
+    closure: -1,
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+macro sep_by1(sep: rule_t, item: rule_t) rule_t {
+    seq(item, repeat(seq(sep, item)))
+}
+
+macro sep_by(sep: rule_t, item: rule_t) rule_t {
+    optional(sep_by1(sep, item))
+}
+
+macro primitive_types() rule_t {
+    choice(
+        "u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64",
+        "u128", "i128", "isize", "usize", "f32", "f64",
+        "bool", "str", "char",
+    )
+}
+
+macro numeric_types() rule_t {
+    choice(
+        "u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64",
+        "u128", "i128", "isize", "usize", "f32", "f64",
+    )
+}
+
+macro token_tree_non_special_punctuation() rule_t {
+    choice(
+        "+", "-", "*", "/", "%", "^", "!", "&", "|", "&&", "||", "<<",
+        ">>", "+=", "-=", "*=", "/=", "%=", "^=", "&=", "|=", "<<=",
+        ">>=", "=", "==", "!=", ">", "<", ">=", "<=", "@", "_", ".",
+        "..", "...", "..=", ",", ";", ":", "::", "->", "=>", "#", "?",
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Top-level
+// ---------------------------------------------------------------------------
+
+rule source_file { seq(optional(shebang), repeat(_statement)) }
+
+rule _statement { choice(expression_statement, _declaration_statement) }
+
+rule empty_statement { ";" }
+
+rule expression_statement {
+    choice(
+        seq(_expression, ";"),
+        prec(1, _expression_ending_with_block),
+    )
+}
+
+rule _declaration_statement {
+    choice(
+        const_item, macro_invocation, macro_definition, empty_statement,
+        attribute_item, inner_attribute_item, mod_item, foreign_mod_item,
+        struct_item, union_item, enum_item, type_item, function_item,
+        function_signature_item, impl_item, trait_item, associated_type,
+        let_declaration, use_declaration, extern_crate_declaration, static_item,
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Macro definitions
+// ---------------------------------------------------------------------------
+
+rule macro_definition {
+    seq(
+        "macro_rules!",
+        field(name, choice(identifier, _reserved_identifier)),
+        choice(
+            seq("(", seq(repeat(seq(macro_rule, ";")), optional(macro_rule)), ")", ";"),
+            seq("[", seq(repeat(seq(macro_rule, ";")), optional(macro_rule)), "]", ";"),
+            seq("{", seq(repeat(seq(macro_rule, ";")), optional(macro_rule)), "}"),
+        ),
+    )
+}
+
+rule macro_rule {
+    seq(field(left, token_tree_pattern), "=>", field(right, token_tree))
+}
+
+rule _token_pattern {
+    choice(token_tree_pattern, token_repetition_pattern, token_binding_pattern, metavariable, _non_special_token)
+}
+
+rule token_tree_pattern {
+    choice(
+        seq("(", repeat(_token_pattern), ")"),
+        seq("[", repeat(_token_pattern), "]"),
+        seq("{", repeat(_token_pattern), "}"),
+    )
+}
+
+rule token_binding_pattern {
+    prec(1, seq(field(name, metavariable), ":", field(type, fragment_specifier)))
+}
+
+rule token_repetition_pattern {
+    seq("$", "(", repeat(_token_pattern), ")", optional(regexp(r"[^+*?]+")), choice("+", "*", "?"))
+}
+
+rule fragment_specifier {
+    choice(
+        "block", "expr", "expr_2021", "ident", "item", "lifetime", "literal", "meta", "pat",
+        "pat_param", "path", "stmt", "tt", "ty", "vis",
+    )
+}
+
+rule _tokens { choice(token_tree, token_repetition, metavariable, _non_special_token) }
+
+rule token_tree {
+    choice(
+        seq("(", repeat(_tokens), ")"),
+        seq("[", repeat(_tokens), "]"),
+        seq("{", repeat(_tokens), "}"),
+    )
+}
+
+rule token_repetition {
+    seq("$", "(", repeat(_tokens), ")", optional(regexp(r"[^+*?]+")), choice("+", "*", "?"))
+}
+
+rule _non_special_token {
+    choice(
+        _literal, identifier, mutable_specifier, self, super, crate,
+        alias(primitive_types(), primitive_type),
+        prec_right(0, repeat1(token_tree_non_special_punctuation())),
+        "'",
+        "as", "async", "await", "break", "const", "continue", "default", "enum", "fn", "for", "gen",
+        "if", "impl", "let", "loop", "match", "mod", "pub", "return", "static", "struct", "trait",
+        "type", "union", "unsafe", "use", "where", "while",
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Declarations
+// ---------------------------------------------------------------------------
+
+rule attribute_item { seq("#", "[", attribute, "]") }
+rule inner_attribute_item { seq("#", "!", "[", attribute, "]") }
+
+rule attribute {
+    seq(
+        _path,
+        optional(choice(
+            seq("=", field(value, _expression)),
+            field(arguments, alias(delim_token_tree, token_tree)),
+        )),
+    )
+}
+
+rule mod_item {
+    seq(
+        optional(visibility_modifier),
+        "mod",
+        field(name, identifier),
+        choice(";", field(body, declaration_list)),
+    )
+}
+
+rule foreign_mod_item {
+    seq(optional("unsafe"), extern_modifier, choice(";", field(body, declaration_list)))
+}
+
+rule declaration_list { seq("{", repeat(_declaration_statement), "}") }
+
+rule struct_item {
+    seq(
+        optional(visibility_modifier),
+        "struct",
+        field(name, _type_identifier),
+        field(type_parameters, optional(type_parameters)),
+        choice(
+            seq(optional(where_clause), field(body, field_declaration_list)),
+            seq(field(body, ordered_field_declaration_list), optional(where_clause), ";"),
+            ";",
+        ),
+    )
+}
+
+rule union_item {
+    seq(
+        optional(visibility_modifier),
+        "union",
+        field(name, _type_identifier),
+        field(type_parameters, optional(type_parameters)),
+        optional(where_clause),
+        field(body, field_declaration_list),
+    )
+}
+
+rule enum_item {
+    seq(
+        optional(visibility_modifier),
+        "enum",
+        field(name, _type_identifier),
+        field(type_parameters, optional(type_parameters)),
+        optional(where_clause),
+        field(body, enum_variant_list),
+    )
+}
+
+rule enum_variant_list {
+    seq("{", sep_by(",", seq(repeat(attribute_item), enum_variant)), optional(","), "}")
+}
+
+rule enum_variant {
+    seq(
+        optional(visibility_modifier),
+        field(name, identifier),
+        field(body, optional(choice(field_declaration_list, ordered_field_declaration_list))),
+        optional(seq("=", field(value, _expression))),
+    )
+}
+
+rule field_declaration_list {
+    seq("{", sep_by(",", seq(repeat(attribute_item), field_declaration)), optional(","), "}")
+}
+
+rule field_declaration {
+    seq(optional(visibility_modifier), field(name, _field_identifier), ":", field(type, _type))
+}
+
+rule ordered_field_declaration_list {
+    seq(
+        "(",
+        sep_by(",", seq(repeat(attribute_item), optional(visibility_modifier), field(type, _type))),
+        optional(","),
+        ")",
+    )
+}
+
+rule extern_crate_declaration {
+    seq(
+        optional(visibility_modifier),
+        "extern", crate, field(name, identifier),
+        optional(seq("as", field(alias, identifier))),
+        ";",
+    )
+}
+
+rule const_item {
+    seq(
+        optional(visibility_modifier),
+        "const", field(name, identifier), ":", field(type, _type),
+        optional(seq("=", field(value, _expression))),
+        ";",
+    )
+}
+
+rule static_item {
+    seq(
+        optional(visibility_modifier),
+        "static", optional("ref"), optional(mutable_specifier),
+        field(name, identifier), ":", field(type, _type),
+        optional(seq("=", field(value, _expression))),
+        ";",
+    )
+}
+
+rule type_item {
+    seq(
+        optional(visibility_modifier),
+        "type", field(name, _type_identifier),
+        field(type_parameters, optional(type_parameters)),
+        optional(where_clause),
+        "=", field(type, _type),
+        optional(where_clause),
+        ";",
+    )
+}
+
+rule function_item {
+    seq(
+        optional(visibility_modifier),
+        optional(function_modifiers),
+        "fn",
+        field(name, choice(identifier, metavariable)),
+        field(type_parameters, optional(type_parameters)),
+        field(parameters, parameters),
+        optional(seq("->", field(return_type, _type))),
+        optional(where_clause),
+        field(body, block),
+    )
+}
+
+rule function_signature_item {
+    seq(
+        optional(visibility_modifier),
+        optional(function_modifiers),
+        "fn",
+        field(name, choice(identifier, metavariable)),
+        field(type_parameters, optional(type_parameters)),
+        field(parameters, parameters),
+        optional(seq("->", field(return_type, _type))),
+        optional(where_clause),
+        ";",
+    )
+}
+
+rule function_modifiers {
+    repeat1(choice("async", "default", "const", "unsafe", extern_modifier))
+}
+
+rule where_clause {
+    prec_right(0, seq("where", optional(seq(sep_by1(",", where_predicate), optional(",")))))
+}
+
+rule where_predicate {
+    seq(
+        field(left, choice(
+            lifetime, _type_identifier, scoped_type_identifier, generic_type,
+            reference_type, pointer_type, tuple_type, array_type,
+            higher_ranked_trait_bound,
+            alias(primitive_types(), primitive_type),
+        )),
+        field(bounds, trait_bounds),
+    )
+}
+
+rule impl_item {
+    seq(
+        optional("unsafe"),
+        "impl",
+        field(type_parameters, optional(type_parameters)),
+        optional(seq(
+            optional("!"),
+            field(trait, choice(_type_identifier, scoped_type_identifier, generic_type)),
+            "for",
+        )),
+        field(type, _type),
+        optional(where_clause),
+        choice(field(body, declaration_list), ";"),
+    )
+}
+
+rule trait_item {
+    seq(
+        optional(visibility_modifier),
+        optional("unsafe"),
+        "trait",
+        field(name, _type_identifier),
+        field(type_parameters, optional(type_parameters)),
+        field(bounds, optional(trait_bounds)),
+        optional(where_clause),
+        field(body, declaration_list),
+    )
+}
+
+rule associated_type {
+    seq(
+        "type",
+        field(name, _type_identifier),
+        field(type_parameters, optional(type_parameters)),
+        field(bounds, optional(trait_bounds)),
+        optional(where_clause),
+        ";",
+    )
+}
+
+rule trait_bounds {
+    seq(":", sep_by1("+", choice(_type, lifetime, higher_ranked_trait_bound)))
+}
+
+rule higher_ranked_trait_bound {
+    seq("for", field(type_parameters, type_parameters), field(type, _type))
+}
+
+rule removed_trait_bound { seq("?", _type) }
+
+rule type_parameters {
+    prec(1, seq(
+        "<",
+        sep_by1(",", seq(
+            repeat(attribute_item),
+            choice(metavariable, type_parameter, lifetime_parameter, const_parameter),
+        )),
+        optional(","),
+        ">",
+    ))
+}
+
+rule const_parameter {
+    seq(
+        "const", field(name, identifier), ":", field(type, _type),
+        optional(seq("=", field(value, choice(block, identifier, _literal, negative_literal)))),
+    )
+}
+
+rule type_parameter {
+    prec(1, seq(
+        field(name, _type_identifier),
+        optional(field(bounds, trait_bounds)),
+        optional(seq("=", field(default_type, _type))),
+    ))
+}
+
+rule lifetime_parameter {
+    prec(1, seq(field(name, lifetime), optional(field(bounds, trait_bounds))))
+}
+
+rule let_declaration {
+    seq(
+        "let",
+        optional(mutable_specifier),
+        field(pattern, _pattern),
+        optional(seq(":", field(type, _type))),
+        optional(seq("=", field(value, _expression))),
+        optional(seq("else", field(alternative, block))),
+        ";",
+    )
+}
+
+rule use_declaration {
+    seq(optional(visibility_modifier), "use", field(argument, _use_clause), ";")
+}
+
+rule _use_clause { choice(_path, use_as_clause, use_list, scoped_use_list, use_wildcard) }
+
+rule scoped_use_list {
+    seq(field(path, optional(_path)), "::", field(list, use_list))
+}
+
+rule use_list {
+    seq("{", sep_by(",", choice(_use_clause)), optional(","), "}")
+}
+
+rule use_as_clause {
+    seq(field(path, _path), "as", field(alias, identifier))
+}
+
+rule use_wildcard { seq(optional(seq(optional(_path), "::")), "*") }
+
+rule parameters {
+    seq(
+        "(",
+        sep_by(",", seq(
+            optional(attribute_item),
+            choice(parameter, self_parameter, variadic_parameter, "_", _type),
+        )),
+        optional(","),
+        ")",
+    )
+}
+
+rule self_parameter {
+    seq(optional("&"), optional(lifetime), optional(mutable_specifier), self)
+}
+
+rule variadic_parameter {
+    seq(optional(mutable_specifier), optional(seq(field(pattern, _pattern), ":")), "...")
+}
+
+rule parameter {
+    seq(
+        optional(mutable_specifier),
+        field(pattern, choice(_pattern, self)),
+        ":",
+        field(type, _type),
+    )
+}
+
+rule extern_modifier { seq("extern", optional(string_literal)) }
+
+rule visibility_modifier {
+    choice(
+        crate,
+        seq(
+            "pub",
+            optional(seq("(", choice(self, super, crate, seq("in", _path)), ")")),
+        ),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+rule _type {
+    choice(
+        abstract_type, reference_type, metavariable, pointer_type,
+        generic_type, scoped_type_identifier, tuple_type, unit_type,
+        array_type, function_type, _type_identifier, macro_invocation,
+        never_type, dynamic_type, bounded_type, removed_trait_bound,
+        alias(primitive_types(), primitive_type),
+    )
+}
+
+rule bracketed_type { seq("<", choice(_type, qualified_type), ">") }
+
+rule qualified_type {
+    seq(field(type, _type), "as", field(alias, _type))
+}
+
+rule lifetime { prec(1, seq("'", identifier)) }
+
+rule array_type {
+    seq("[", field(element, _type), optional(seq(";", field(length, _expression))), "]")
+}
+
+rule for_lifetimes { seq("for", "<", sep_by1(",", lifetime), optional(","), ">") }
+
+rule function_type {
+    seq(
+        optional(for_lifetimes),
+        prec(PREC.call, seq(
+            choice(
+                field(trait, choice(_type_identifier, scoped_type_identifier)),
+                seq(optional(function_modifiers), "fn"),
+            ),
+            field(parameters, parameters),
+        )),
+        optional(seq("->", field(return_type, _type))),
+    )
+}
+
+rule tuple_type { seq("(", sep_by1(",", _type), optional(","), ")") }
+
+rule unit_type { seq("(", ")") }
+
+rule generic_function {
+    prec(1, seq(
+        field(function, choice(identifier, scoped_identifier, field_expression)),
+        "::",
+        field(type_arguments, type_arguments),
+    ))
+}
+
+rule generic_type {
+    prec(1, seq(
+        field(type, choice(_type_identifier, _reserved_identifier, scoped_type_identifier)),
+        field(type_arguments, type_arguments),
+    ))
+}
+
+rule generic_type_with_turbofish {
+    seq(
+        field(type, choice(_type_identifier, scoped_identifier)),
+        "::",
+        field(type_arguments, type_arguments),
+    )
+}
+
+rule bounded_type {
+    prec_left(-1, seq(
+        choice(lifetime, _type, use_bounds),
+        "+",
+        choice(lifetime, _type, use_bounds),
+    ))
+}
+
+rule use_bounds {
+    seq(
+        "use",
+        token(prec(1, "<")),
+        sep_by(",", choice(lifetime, _type_identifier)),
+        optional(","),
+        ">",
+    )
+}
+
+rule type_arguments {
+    seq(
+        token(prec(1, "<")),
+        sep_by1(",", seq(
+            choice(_type, type_binding, lifetime, _literal, block),
+            optional(trait_bounds),
+        )),
+        optional(","),
+        ">",
+    )
+}
+
+rule type_binding {
+    seq(
+        field(name, _type_identifier),
+        field(type_arguments, optional(type_arguments)),
+        "=",
+        field(type, _type),
+    )
+}
+
+rule reference_type {
+    seq("&", optional(lifetime), optional(mutable_specifier), field(type, _type))
+}
+
+rule pointer_type {
+    seq("*", choice("const", mutable_specifier), field(type, _type))
+}
+
+rule never_type { "!" }
+
+rule abstract_type {
+    seq(
+        "impl",
+        optional(seq("for", type_parameters)),
+        field(trait, prec(1, choice(
+            _type_identifier, scoped_type_identifier, removed_trait_bound,
+            generic_type, function_type, tuple_type, bounded_type,
+        ))),
+    )
+}
+
+rule dynamic_type {
+    seq(
+        "dyn",
+        field(trait, choice(
+            higher_ranked_trait_bound, _type_identifier, scoped_type_identifier,
+            generic_type, function_type, tuple_type,
+        )),
+    )
+}
+
+rule mutable_specifier { "mut" }
+
+// ---------------------------------------------------------------------------
+// Expressions
+// ---------------------------------------------------------------------------
+
+rule _expression_except_range {
+    choice(
+        unary_expression, reference_expression, try_expression,
+        binary_expression, assignment_expression, compound_assignment_expr,
+        type_cast_expression, call_expression, return_expression,
+        yield_expression, _literal,
+        prec_left(0, identifier),
+        alias(primitive_types(), identifier),
+        prec_left(0, _reserved_identifier),
+        self, scoped_identifier, generic_function, await_expression,
+        field_expression, array_expression, tuple_expression,
+        prec(1, macro_invocation),
+        unit_expression, break_expression, continue_expression,
+        index_expression, metavariable, closure_expression,
+        parenthesized_expression, struct_expression,
+        _expression_ending_with_block,
+    )
+}
+
+rule _expression { choice(_expression_except_range, range_expression) }
+
+rule _expression_ending_with_block {
+    choice(
+        unsafe_block, async_block, gen_block, try_block,
+        block, if_expression, match_expression, while_expression,
+        loop_expression, for_expression, const_block,
+    )
+}
+
+rule macro_invocation {
+    seq(
+        field(macro, choice(scoped_identifier, identifier, _reserved_identifier)),
+        "!",
+        alias(delim_token_tree, token_tree),
+    )
+}
+
+rule delim_token_tree {
+    choice(
+        seq("(", repeat(_delim_tokens), ")"),
+        seq("[", repeat(_delim_tokens), "]"),
+        seq("{", repeat(_delim_tokens), "}"),
+    )
+}
+
+rule _delim_tokens { choice(_non_delim_token, alias(delim_token_tree, token_tree)) }
+rule _non_delim_token { choice(_non_special_token, "$") }
+
+rule scoped_identifier {
+    seq(
+        field(path, optional(choice(_path, bracketed_type, alias(generic_type_with_turbofish, generic_type)))),
+        "::",
+        field(name, choice(identifier, super)),
+    )
+}
+
+rule scoped_type_identifier_in_expression_position {
+    prec(-2, seq(
+        field(path, optional(choice(_path, alias(generic_type_with_turbofish, generic_type)))),
+        "::",
+        field(name, _type_identifier),
+    ))
+}
+
+rule scoped_type_identifier {
+    seq(
+        field(path, optional(choice(
+            _path,
+            alias(generic_type_with_turbofish, generic_type),
+            bracketed_type,
+            generic_type,
+        ))),
+        "::",
+        field(name, _type_identifier),
+    )
+}
+
+rule range_expression {
+    prec_left(PREC.range, choice(
+        seq(_expression, choice("..", "...", "..="), _expression),
+        seq(_expression, ".."),
+        seq("..", _expression),
+        "..",
+    ))
+}
+
+rule unary_expression {
+    prec(PREC.unary, seq(choice("-", "*", "!"), _expression))
+}
+
+rule try_expression { prec(PREC.try, seq(_expression, "?")) }
+
+rule reference_expression {
+    prec(PREC.unary, seq(
+        "&",
+        choice(seq("raw", choice("const", mutable_specifier)), optional(mutable_specifier)),
+        field(value, _expression),
+    ))
+}
+
+rule binary_expression {
+    choice(
+        for (op: str_t, p: int_t) in [
+            ("&&", PREC.and), ("||", PREC.or),
+            ("&", PREC.bitand), ("|", PREC.bitor), ("^", PREC.bitxor),
+        ] {
+            prec_left(p, seq(field(left, _expression), field(operator, op), field(right, _expression)))
+        },
+        prec_left(PREC.comparative, seq(field(left, _expression), field(operator, choice("==", "!=", "<", "<=", ">", ">=")), field(right, _expression))),
+        prec_left(PREC.shift, seq(field(left, _expression), field(operator, choice("<<", ">>")), field(right, _expression))),
+        prec_left(PREC.additive, seq(field(left, _expression), field(operator, choice("+", "-")), field(right, _expression))),
+        prec_left(PREC.multiplicative, seq(field(left, _expression), field(operator, choice("*", "/", "%")), field(right, _expression))),
+    )
+}
+
+rule assignment_expression {
+    prec_left(PREC.assign, seq(field(left, _expression), "=", field(right, _expression)))
+}
+
+rule compound_assignment_expr {
+    prec_left(PREC.assign, seq(
+        field(left, _expression),
+        field(operator, choice("+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=")),
+        field(right, _expression),
+    ))
+}
+
+rule type_cast_expression {
+    prec_left(PREC.cast, seq(field(value, _expression), "as", field(type, _type)))
+}
+
+rule return_expression {
+    choice(
+        prec_left(0, seq("return", _expression)),
+        prec(-1, "return"),
+    )
+}
+
+rule yield_expression {
+    choice(
+        prec_left(0, seq("yield", _expression)),
+        prec(-1, "yield"),
+    )
+}
+
+rule call_expression {
+    prec(PREC.call, seq(field(function, _expression_except_range), field(arguments, arguments)))
+}
+
+rule arguments {
+    seq("(", sep_by(",", seq(repeat(attribute_item), _expression)), optional(","), ")")
+}
+
+rule array_expression {
+    seq(
+        "[",
+        repeat(attribute_item),
+        choice(
+            seq(_expression, ";", field(length, _expression)),
+            seq(sep_by(",", seq(repeat(attribute_item), _expression)), optional(",")),
+        ),
+        "]",
+    )
+}
+
+rule parenthesized_expression { seq("(", _expression, ")") }
+
+rule tuple_expression {
+    seq(
+        "(",
+        repeat(attribute_item),
+        seq(_expression, ","),
+        repeat(seq(_expression, ",")),
+        optional(_expression),
+        ")",
+    )
+}
+
+rule unit_expression { seq("(", ")") }
+
+rule struct_expression {
+    seq(
+        field(name, choice(
+            _type_identifier,
+            alias(scoped_type_identifier_in_expression_position, scoped_type_identifier),
+            generic_type_with_turbofish,
+        )),
+        field(body, field_initializer_list),
+    )
+}
+
+rule field_initializer_list {
+    seq(
+        "{",
+        sep_by(",", choice(shorthand_field_initializer, field_initializer, base_field_initializer)),
+        optional(","),
+        "}",
+    )
+}
+
+rule shorthand_field_initializer { seq(repeat(attribute_item), identifier) }
+
+rule field_initializer {
+    seq(
+        repeat(attribute_item),
+        field(field, choice(_field_identifier, integer_literal)),
+        ":",
+        field(value, _expression),
+    )
+}
+
+rule base_field_initializer { seq("..", _expression) }
+
+rule if_expression {
+    prec_right(0, seq(
+        "if",
+        field(condition, _condition),
+        field(consequence, block),
+        optional(field(alternative, else_clause)),
+    ))
+}
+
+rule let_condition {
+    seq("let", field(pattern, _pattern), "=", field(value, prec_left(PREC.and, _expression)))
+}
+
+rule _let_chain {
+    prec_left(PREC.and, choice(
+        seq(_let_chain, "&&", let_condition),
+        seq(_let_chain, "&&", _expression),
+        seq(let_condition, "&&", _expression),
+        seq(let_condition, "&&", let_condition),
+        seq(_expression, "&&", let_condition),
+    ))
+}
+
+rule _condition { choice(_expression, let_condition, alias(_let_chain, let_chain)) }
+
+rule else_clause { seq("else", choice(block, if_expression)) }
+
+rule match_expression {
+    seq("match", field(value, _expression), field(body, match_block))
+}
+
+rule match_block {
+    seq("{", optional(seq(repeat(match_arm), alias(last_match_arm, match_arm))), "}")
+}
+
+rule match_arm {
+    prec_right(0, seq(
+        repeat(choice(attribute_item, inner_attribute_item)),
+        field(pattern, match_pattern),
+        "=>",
+        choice(
+            seq(field(value, _expression), ","),
+            field(value, prec(1, _expression_ending_with_block)),
+        ),
+    ))
+}
+
+rule last_match_arm {
+    seq(
+        repeat(choice(attribute_item, inner_attribute_item)),
+        field(pattern, match_pattern),
+        "=>",
+        field(value, _expression),
+        optional(","),
+    )
+}
+
+rule match_pattern {
+    seq(_pattern, optional(seq("if", field(condition, _condition))))
+}
+
+rule while_expression {
+    seq(optional(seq(label, ":")), "while", field(condition, _condition), field(body, block))
+}
+
+rule loop_expression {
+    seq(optional(seq(label, ":")), "loop", field(body, block))
+}
+
+rule for_expression {
+    seq(
+        optional(seq(label, ":")),
+        "for", field(pattern, _pattern), "in", field(value, _expression), field(body, block),
+    )
+}
+
+rule const_block { seq("const", field(body, block)) }
+
+rule closure_expression {
+    prec(PREC.closure, seq(
+        optional("static"),
+        optional("async"),
+        optional("move"),
+        field(parameters, closure_parameters),
+        choice(
+            seq(optional(seq("->", field(return_type, _type))), field(body, block)),
+            field(body, choice(_expression, "_")),
+        ),
+    ))
+}
+
+rule closure_parameters { seq("|", sep_by(",", choice(_pattern, parameter)), "|") }
+
+rule label { seq("'", identifier) }
+
+rule break_expression {
+    prec_left(0, seq("break", optional(label), optional(_expression)))
+}
+
+rule continue_expression { prec_left(0, seq("continue", optional(label))) }
+
+rule index_expression { prec(PREC.call, seq(_expression, "[", _expression, "]")) }
+
+rule await_expression { prec(PREC.fld, seq(_expression, ".", "await")) }
+
+rule field_expression {
+    prec(PREC.fld, seq(
+        field(value, _expression), ".", field(field, choice(_field_identifier, integer_literal)),
+    ))
+}
+
+rule unsafe_block { seq("unsafe", block) }
+rule async_block { seq("async", optional("move"), block) }
+rule gen_block { seq("gen", optional("move"), block) }
+rule try_block { seq("try", block) }
+
+rule block {
+    seq(optional(seq(label, ":")), "{", repeat(_statement), optional(_expression), "}")
+}
+
+// ---------------------------------------------------------------------------
+// Patterns
+// ---------------------------------------------------------------------------
+
+rule _pattern {
+    choice(
+        _literal_pattern,
+        alias(primitive_types(), identifier),
+        identifier, scoped_identifier, generic_pattern,
+        tuple_pattern, tuple_struct_pattern, struct_pattern,
+        _reserved_identifier, ref_pattern, slice_pattern,
+        captured_pattern, reference_pattern, remaining_field_pattern,
+        mut_pattern, range_pattern, or_pattern, const_block, macro_invocation,
+        "_",
+    )
+}
+
+rule generic_pattern {
+    seq(choice(identifier, scoped_identifier), "::", field(type_arguments, type_arguments))
+}
+
+rule tuple_pattern {
+    seq("(", sep_by(",", choice(_pattern, closure_expression)), optional(","), ")")
+}
+
+rule slice_pattern {
+    seq("[", sep_by(",", _pattern), optional(","), "]")
+}
+
+rule tuple_struct_pattern {
+    seq(
+        field(type, choice(identifier, scoped_identifier, alias(generic_type_with_turbofish, generic_type))),
+        "(", sep_by(",", _pattern), optional(","), ")",
+    )
+}
+
+rule struct_pattern {
+    seq(
+        field(type, choice(_type_identifier, scoped_type_identifier)),
+        "{", sep_by(",", choice(field_pattern, remaining_field_pattern)), optional(","), "}",
+    )
+}
+
+rule field_pattern {
+    seq(
+        optional("ref"),
+        optional(mutable_specifier),
+        choice(
+            field(name, alias(identifier, shorthand_field_identifier)),
+            seq(field(name, _field_identifier), ":", field(pattern, _pattern)),
+        ),
+    )
+}
+
+rule remaining_field_pattern { ".." }
+
+rule mut_pattern { prec(-1, seq(mutable_specifier, _pattern)) }
+
+rule range_pattern {
+    choice(
+        seq(
+            field(left, choice(_literal_pattern, _path)),
+            choice(
+                seq(choice("...", "..=", ".."), field(right, choice(_literal_pattern, _path))),
+                "..",
+            ),
+        ),
+        seq(
+            choice("..=", ".."),
+            field(right, choice(_literal_pattern, _path)),
+        ),
+    )
+}
+
+rule ref_pattern { seq("ref", _pattern) }
+rule captured_pattern { seq(identifier, "@", _pattern) }
+rule reference_pattern { seq("&", optional(mutable_specifier), _pattern) }
+
+rule or_pattern {
+    prec_left(-2, choice(seq(_pattern, "|", _pattern), seq("|", _pattern)))
+}
+
+// ---------------------------------------------------------------------------
+// Literals
+// ---------------------------------------------------------------------------
+
+rule _literal {
+    choice(string_literal, raw_string_literal, char_literal, boolean_literal, integer_literal, float_literal)
+}
+
+rule _literal_pattern {
+    choice(string_literal, raw_string_literal, char_literal, boolean_literal, integer_literal, float_literal, negative_literal)
+}
+
+rule negative_literal { seq("-", choice(integer_literal, float_literal)) }
+
+rule integer_literal {
+    token(seq(
+        choice(
+            regexp(r"[0-9][0-9_]*"),
+            regexp(r"0x[0-9a-fA-F_]+"),
+            regexp(r"0b[01_]+"),
+            regexp(r"0o[0-7_]+"),
+        ),
+        optional(numeric_types()),
+    ))
+}
+
+rule string_literal {
+    seq(
+        alias(regexp(r#"[bc]?""#), "\""),
+        repeat(choice(escape_sequence, string_content)),
+        alias(string_close, "\""),
+    )
+}
+
+rule raw_string_literal {
+    seq(
+        _raw_string_literal_start,
+        alias(raw_string_literal_content, string_content),
+        _raw_string_literal_end,
+    )
+}
+
+rule char_literal {
+    token(seq(
+        optional("b"),
+        "'",
+        optional(choice(
+            seq("\\", choice(
+                regexp(r"[^xu]"),
+                regexp(r"u[0-9a-fA-F]{4}"),
+                regexp(r"u\{[0-9a-fA-F]+\}"),
+                regexp(r"x[0-9a-fA-F]{2}"),
+            )),
+            regexp(r"[^\\']"),
+        )),
+        "'",
+    ))
+}
+
+rule escape_sequence {
+    token_immediate(seq(
+        "\\",
+        choice(
+            regexp(r"[^xu]"),
+            regexp(r"u[0-9a-fA-F]{4}"),
+            regexp(r"u\{[0-9a-fA-F]+\}"),
+            regexp(r"x[0-9a-fA-F]{2}"),
+        ),
+    ))
+}
+
+rule boolean_literal { choice("true", "false") }
+
+// ---------------------------------------------------------------------------
+// Comments
+// ---------------------------------------------------------------------------
+
+rule comment { choice(line_comment, block_comment) }
+
+rule line_comment {
+    seq(
+        "//",
+        choice(
+            seq(token_immediate(prec(2, regexp(r"\/\/"))), regexp(r".*")),
+            seq(_line_doc_comment_marker, field(doc, alias(_line_doc_content, doc_comment))),
+            token_immediate(prec(1, regexp(r".*"))),
+        ),
+    )
+}
+
+rule _line_doc_comment_marker {
+    choice(
+        field(outer, alias(_outer_line_doc_comment_marker, outer_doc_comment_marker)),
+        field(inner, alias(_inner_line_doc_comment_marker, inner_doc_comment_marker)),
+    )
+}
+
+rule _inner_line_doc_comment_marker { token_immediate(prec(2, "!")) }
+rule _outer_line_doc_comment_marker { token_immediate(prec(2, "/")) }
+
+rule block_comment {
+    seq(
+        "/*",
+        optional(choice(
+            seq(
+                _block_doc_comment_marker,
+                optional(field(doc, alias(_block_comment_content, doc_comment))),
+            ),
+            _block_comment_content,
+        )),
+        "*/",
+    )
+}
+
+rule _block_doc_comment_marker {
+    choice(
+        field(outer, alias(_outer_block_doc_comment_marker, outer_doc_comment_marker)),
+        field(inner, alias(_inner_block_doc_comment_marker, inner_doc_comment_marker)),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Identifiers and paths
+// ---------------------------------------------------------------------------
+
+rule _path {
+    choice(
+        self,
+        alias(primitive_types(), identifier),
+        metavariable, super, crate, identifier, scoped_identifier, _reserved_identifier,
+    )
+}
+
+rule identifier { regexp(r"(r#)?[_\p{XID_Start}][_\p{XID_Continue}]*") }
+
+rule shebang { regexp(r"#![\r\f\t\v ]*([^\[\n].*)?\n") }
+
+rule _reserved_identifier {
+    alias(choice("default", "union", "gen", "raw"), identifier)
+}
+
+rule _type_identifier { alias(identifier, type_identifier) }
+rule _field_identifier { alias(identifier, field_identifier) }
+
+rule self { "self" }
+rule super { "super" }
+rule crate { "crate" }
+
+rule metavariable { regexp(r"\$[a-zA-Z_]\w*") }
