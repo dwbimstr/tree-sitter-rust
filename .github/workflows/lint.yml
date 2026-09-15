@@ -4,10 +4,10 @@ on:
   push:
     branches: [master]
     paths:
-      - grammar.js
+      - grammar.mjs
   pull_request:
     paths:
-      - grammar.js
+      - grammar.mjs
 
 jobs:
   lint:

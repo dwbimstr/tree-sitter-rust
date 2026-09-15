@@ -9,6 +9,60 @@
 
 Rust grammar for [tree-sitter](https://github.com/tree-sitter/tree-sitter).
 
+## Local module-grammar prototype
+
+This working copy uses the experimental module grammar DSL in `grammar.mjs`.
+It requires matching local `tree-sitter-rust` and `tree-sitter` checkouts on
+`prototype/module-grammar-dsl`, with the prototype changes present.
+These prototype branches are not released CLI versions.
+Arrange the checkouts as siblings:
+
+```text
+workspace/
+  tree-sitter/
+  tree-sitter-rust/
+```
+
+With Node.js, npm, Rust/Cargo, and a C/C++ toolchain installed:
+
+```sh
+cd workspace/tree-sitter-rust
+npm install --ignore-scripts
+npm run generate -- --js-runtime native
+npm run test:corpus
+npm run lint
+```
+
+The local `file:../tree-sitter/crates/cli/npm` development dependency supplies
+the prototype DSL types. `--ignore-scripts` skips its release-binary downloader
+and the native binding build. Development commands use `scripts/tree-sitter.mjs`
+to run `cargo run --manifest-path ../tree-sitter/Cargo.toml -p tree-sitter-cli --`
+instead of that downloaded binary. Cargo builds the CLI on first use.
+For non-sibling checkouts, `TREE_SITTER_DIR` can override the wrapper's CLI
+checkout path; npm's local dependency still requires the sibling layout.
+Other CLI commands can be run with `npm run tree-sitter -- <command>`.
+
+The grammar exports `rule()` bindings and a default configuration with arrays;
+`start: source_file` selects the entry rule. `override()` and `external()`
+are supplied by the prototype DSL. The package remains CommonJS for its native
+Node bindings; only the grammar and development wrapper are ES modules.
+
+Alias-only node names use exported `rule()` declarations without a body.
+The `arguments` and `super` symbols use local names `arguments_` and `super_`
+and are exported under their original names, since those bindings are reserved
+in JavaScript modules. The explicit `.d.ts` extension in the grammar's type
+reference also supports TypeScript's NodeNext module resolution.
+
+`npm test` still runs the native Node binding tests. To build those bindings
+after installing with scripts disabled, run `npm rebuild node-addon-api tree-sitter`
+and `npm run install` before `npm test`.
+
+The existing hosted workflows use released tooling and do not provision these
+local prototype checkouts. They cannot validate this grammar syntax as-is;
+use the local commands above unless CI also builds the matching Tree-sitter branch.
+The CMake and Makefile builds still consume generated `src/grammar.json` and C
+sources; regenerate them with the prototype CLI before building bindings.
+
 ## Features
 
 - **Speed** — When initially parsing a file, `tree-sitter-rust` takes around two to three times
