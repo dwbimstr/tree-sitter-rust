@@ -8,7 +8,6 @@ export default [
       sourceType: 'module',
       globals: {
         rule: 'readonly',
-        override: 'readonly',
         external: 'readonly',
         RustRegex: 'readonly',
       },
@@ -16,9 +15,8 @@ export default [
     rules: {
       // Exported grammar bindings use Rust node names, including underscores.
       camelcase: 'off',
-      // Rules are a comma-separated declaration list, aligned by rule name.
+      // Allow comma-separated rule declarations.
       'one-var': 'off',
-      indent: ['error', 2, {SwitchCase: 1, VariableDeclarator: 0}],
     },
   },
 ];

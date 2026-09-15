@@ -43,8 +43,10 @@ checkout path; npm's local dependency still requires the sibling layout.
 Other CLI commands can be run with `npm run tree-sitter -- <command>`.
 
 The grammar exports `rule()` bindings and a default configuration with arrays;
-`start: source_file` selects the entry rule. `override()` and `external()`
-are supplied by the prototype DSL. The package remains CommonJS for its native
+`start: source_file` selects the entry rule and `external()` declares scanner
+tokens. Derived grammars replace inherited definitions by exporting a `rule()`
+with the same name; a builder can call its `original()` accessor to extend the
+inherited body. The package remains CommonJS for its native
 Node bindings; only the grammar and development wrapper are ES modules.
 
 Alias-only node names use exported `rule()` declarations without a body.
