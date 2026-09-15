@@ -65,10 +65,10 @@ export const primitive_type = rule(),
   outer_doc_comment_marker = rule(),
   inner_doc_comment_marker = rule(),
   type_identifier = rule(),
-  field_identifier = rule();
+  field_identifier = rule(),
 
-// Scanner token order is specified explicitly in the configuration below.
-export const string_content = external(),
+  // Scanner token order is specified explicitly in the configuration below.
+  string_content = external(),
   string_close = external(),
   _raw_string_literal_start = external(),
   raw_string_literal_content = external(),
@@ -78,9 +78,9 @@ export const string_content = external(),
   _inner_block_doc_comment_marker = external(),
   _block_comment_content = external(),
   _line_doc_content = external(),
-  _error_sentinel = external();
+  _error_sentinel = external(),
 
-export const source_file = rule(() => seq(
+  source_file = rule(() => seq(
     optional(shebang),
     repeat(_statement),
   )),
@@ -1074,17 +1074,9 @@ export const source_file = rule(() => seq(
   call_expression = rule(() => prec(PREC.call, seq(
     field('function', _expression_except_range),
     field('arguments', arguments_),
-  )));
+  ))),
 
-const arguments_ = rule(() => seq(
-  '(',
-  sepBy(',', seq(repeat(attribute_item), _expression)),
-  optional(','),
-  ')',
-));
-export {arguments_ as arguments};
-
-export const array_expression = rule(() => seq(
+  array_expression = rule(() => seq(
     '[',
     repeat(attribute_item),
     choice(
@@ -1626,14 +1618,23 @@ export const array_expression = rule(() => seq(
   _type_identifier = rule(() => alias(identifier, type_identifier)),
   _field_identifier = rule(() => alias(identifier, field_identifier)),
 
-  self = rule(() => 'self');
+  self = rule(() => 'self'),
 
-const super_ = rule(() => 'super');
-export {super_ as super};
-
-export const crate = rule(() => 'crate'),
+  crate = rule(() => 'crate'),
 
   metavariable = rule(() => /\$[a-zA-Z_]\w*/);
+
+// These public names cannot be used as local bindings in an ES module.
+const arguments_ = rule(() => seq(
+    '(',
+    sepBy(',', seq(repeat(attribute_item), _expression)),
+    optional(','),
+    ')',
+  )),
+
+  super_ = rule(() => 'super');
+
+export {arguments_ as arguments, super_ as super};
 
 /**
  * Creates a rule to match one or more of the rules separated by the separator.
