@@ -65,6 +65,13 @@ const integerSuffixes = numericTypes.concat(['f16', 'f128']);
 // spelling `~const Trait`, kept as anonymous tokens before the bound.
 const maybeConstModifier = choice(seq('[', 'const', ']'), seq('~', 'const'));
 
+// Keywords that are also identifiers (`_reserved_identifier`).
+const reservedIdentifiers = ['default', 'union', 'gen', 'raw'];
+
+// Keywords only before the item they modify (`auto trait`, `safe fn`), and
+// identifiers, type names included, everywhere else.
+const contextualKeywords = ['auto', 'safe'];
+
 module.exports = grammar({
   name: 'rust',
 
@@ -105,6 +112,7 @@ module.exports = grammar({
     $._non_special_token,
     $._declaration_statement,
     $._reserved_identifier,
+    $._contextual_identifier,
     $._expression_ending_with_block,
     $._const_trait_bound,
   ],
@@ -434,7 +442,9 @@ module.exports = grammar({
     const_item: $ => seq(
       optional($.visibility_modifier),
       'const',
-      field('name', $.identifier),
+      // `safe` and `auto` may follow `const` as modifiers (`const safe fn`,
+      // `const auto trait`).
+      field('name', choice($.identifier, $._contextual_identifier)),
       ':',
       field('type', $._type),
       optional(
@@ -937,6 +947,7 @@ module.exports = grammar({
     generic_function: $ => prec(1, seq(
       field('function', choice(
         $.identifier,
+        $._contextual_identifier,
         $.scoped_identifier,
         $.field_expression,
       )),
@@ -947,7 +958,8 @@ module.exports = grammar({
     generic_type: $ => prec(1, seq(
       field('type', choice(
         $._type_identifier,
-        $._reserved_identifier,
+        // The contextual keywords are type identifiers here already.
+        alias(choice(...reservedIdentifiers), $.identifier),
         $.scoped_type_identifier,
       )),
       field('type_arguments', $.type_arguments),
@@ -1140,7 +1152,7 @@ module.exports = grammar({
         alias($.generic_type_with_turbofish, $.generic_type),
       ))),
       '::',
-      field('name', choice($.identifier, $.super)),
+      field('name', choice($.identifier, $._contextual_identifier, $.super)),
     ),
 
     scoped_type_identifier_in_expression_position: $ => prec(-2, seq(
@@ -1537,6 +1549,7 @@ module.exports = grammar({
     generic_pattern: $ => seq(
       choice(
         $.identifier,
+        $._contextual_identifier,
         $.scoped_identifier,
       ),
       '::',
@@ -1560,6 +1573,7 @@ module.exports = grammar({
     tuple_struct_pattern: $ => seq(
       field('type', choice(
         $.identifier,
+        $._contextual_identifier,
         $.scoped_identifier,
         alias($.generic_type_with_turbofish, $.generic_type),
       )),
@@ -1635,7 +1649,7 @@ module.exports = grammar({
     ),
 
     captured_pattern: $ => seq(
-      $.identifier,
+      choice($.identifier, $._contextual_identifier),
       '@',
       $._pattern,
     ),
@@ -1799,18 +1813,22 @@ module.exports = grammar({
 
     shebang: _ => /#![\r\f\t\v ]*([^\[\n].*)?\n/,
 
-    // Contextual keywords that stay identifiers wherever an identifier may be:
-    // `auto` (`auto trait`) and `safe` (`safe fn` of an `unsafe extern` block).
+    // `default`, `union`, `gen`, `raw` and the contextual keywords stay
+    // identifiers wherever an identifier may be.
     _reserved_identifier: $ => alias(choice(
-      'default',
-      'union',
-      'gen',
-      'raw',
-      'auto',
-      'safe',
+      ...reservedIdentifiers,
+      ...contextualKeywords,
     ), $.identifier),
 
-    _type_identifier: $ => alias($.identifier, $.type_identifier),
+    // `auto` (`auto trait`) and `safe` (`safe fn`, `safe static`) as plain
+    // identifiers. A keyword is lexed only where the parse state admits it,
+    // and there it must also serve as every identifier the state admits: a
+    // name after `const` or `::`, a pattern's or a turbofish call's head.
+    _contextual_identifier: $ => alias(choice(...contextualKeywords), $.identifier),
+
+    // A type named `safe` or `auto` (`struct safe; fn f(x: safe)`): in a type
+    // position `safe` may also begin a function type's modifiers or a path.
+    _type_identifier: $ => alias(choice($.identifier, ...contextualKeywords), $.type_identifier),
     _field_identifier: $ => alias($.identifier, $.field_identifier),
 
     self: _ => 'self',

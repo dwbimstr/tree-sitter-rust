@@ -861,3 +861,169 @@ s_barrier_signal::<-1>();
           (negative_literal
             (integer_literal))))
       arguments: (arguments))))
+
+================================================================================
+Contextual keywords as identifiers and type names
+================================================================================
+
+struct safe;
+struct auto(pub safe);
+fn f(x: safe, v: Vec<auto>, p: a::safe::B) -> Option<safe> {
+    None
+}
+impl safe {
+    fn new() -> safe {
+        safe
+    }
+}
+impl From<auto> for safe {}
+const safe: u8 = 0;
+fn safe() {}
+fn g(safe: u8, auto: u8) {
+    let s = S { safe, auto };
+    safe = s.auto;
+    auto.method();
+    safe::f();
+    a::auto::new();
+    safe!();
+    let r = safe::<u8>();
+    match x {
+        safe(y) => {}
+        auto @ 1..=2 => {}
+    }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (struct_item
+    name: (type_identifier))
+  (struct_item
+    name: (type_identifier)
+    body: (ordered_field_declaration_list
+      (visibility_modifier)
+      type: (type_identifier)))
+  (function_item
+    name: (identifier)
+    parameters: (parameters
+      (parameter
+        pattern: (identifier)
+        type: (type_identifier))
+      (parameter
+        pattern: (identifier)
+        type: (generic_type
+          type: (type_identifier)
+          type_arguments: (type_arguments
+            (type_identifier))))
+      (parameter
+        pattern: (identifier)
+        type: (scoped_type_identifier
+          path: (scoped_identifier
+            path: (identifier)
+            name: (identifier))
+          name: (type_identifier))))
+    return_type: (generic_type
+      type: (type_identifier)
+      type_arguments: (type_arguments
+        (type_identifier)))
+    body: (block
+      (identifier)))
+  (impl_item
+    type: (type_identifier)
+    body: (declaration_list
+      (function_item
+        name: (identifier)
+        parameters: (parameters)
+        return_type: (type_identifier)
+        body: (block
+          (identifier)))))
+  (impl_item
+    trait: (generic_type
+      type: (type_identifier)
+      type_arguments: (type_arguments
+        (type_identifier)))
+    type: (type_identifier)
+    body: (declaration_list))
+  (const_item
+    name: (identifier)
+    type: (primitive_type)
+    value: (integer_literal))
+  (function_item
+    name: (identifier)
+    parameters: (parameters)
+    body: (block))
+  (function_item
+    name: (identifier)
+    parameters: (parameters
+      (parameter
+        pattern: (identifier)
+        type: (primitive_type))
+      (parameter
+        pattern: (identifier)
+        type: (primitive_type)))
+    body: (block
+      (let_declaration
+        pattern: (identifier)
+        value: (struct_expression
+          name: (type_identifier)
+          body: (field_initializer_list
+            (shorthand_field_initializer
+              (identifier))
+            (shorthand_field_initializer
+              (identifier)))))
+      (expression_statement
+        (assignment_expression
+          left: (identifier)
+          right: (field_expression
+            value: (identifier)
+            field: (field_identifier))))
+      (expression_statement
+        (call_expression
+          function: (field_expression
+            value: (identifier)
+            field: (field_identifier))
+          arguments: (arguments)))
+      (expression_statement
+        (call_expression
+          function: (scoped_identifier
+            path: (identifier)
+            name: (identifier))
+          arguments: (arguments)))
+      (expression_statement
+        (call_expression
+          function: (scoped_identifier
+            path: (scoped_identifier
+              path: (identifier)
+              name: (identifier))
+            name: (identifier))
+          arguments: (arguments)))
+      (expression_statement
+        (macro_invocation
+          macro: (identifier)
+          (token_tree)))
+      (let_declaration
+        pattern: (identifier)
+        value: (call_expression
+          function: (generic_function
+            function: (identifier)
+            type_arguments: (type_arguments
+              (primitive_type)))
+          arguments: (arguments)))
+      (expression_statement
+        (match_expression
+          value: (identifier)
+          body: (match_block
+            (match_arm
+              pattern: (match_pattern
+                (tuple_struct_pattern
+                  type: (identifier)
+                  (identifier)))
+              value: (block))
+            (match_arm
+              pattern: (match_pattern
+                (captured_pattern
+                  (identifier)
+                  (range_pattern
+                    left: (integer_literal)
+                    right: (integer_literal))))
+              value: (block))))))))

@@ -2325,8 +2325,17 @@
           "type": "FIELD",
           "name": "name",
           "content": {
-            "type": "SYMBOL",
-            "name": "identifier"
+            "type": "CHOICE",
+            "members": [
+              {
+                "type": "SYMBOL",
+                "name": "identifier"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "_contextual_identifier"
+              }
+            ]
           }
         },
         {
@@ -5363,6 +5372,10 @@
                 },
                 {
                   "type": "SYMBOL",
+                  "name": "_contextual_identifier"
+                },
+                {
+                  "type": "SYMBOL",
                   "name": "scoped_identifier"
                 },
                 {
@@ -5404,8 +5417,30 @@
                   "name": "_type_identifier"
                 },
                 {
-                  "type": "SYMBOL",
-                  "name": "_reserved_identifier"
+                  "type": "ALIAS",
+                  "content": {
+                    "type": "CHOICE",
+                    "members": [
+                      {
+                        "type": "STRING",
+                        "value": "default"
+                      },
+                      {
+                        "type": "STRING",
+                        "value": "union"
+                      },
+                      {
+                        "type": "STRING",
+                        "value": "gen"
+                      },
+                      {
+                        "type": "STRING",
+                        "value": "raw"
+                      }
+                    ]
+                  },
+                  "named": true,
+                  "value": "identifier"
                 },
                 {
                   "type": "SYMBOL",
@@ -6480,6 +6515,10 @@
               {
                 "type": "SYMBOL",
                 "name": "identifier"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "_contextual_identifier"
               },
               {
                 "type": "SYMBOL",
@@ -9136,6 +9175,10 @@
             },
             {
               "type": "SYMBOL",
+              "name": "_contextual_identifier"
+            },
+            {
+              "type": "SYMBOL",
               "name": "scoped_identifier"
             }
           ]
@@ -9300,6 +9343,10 @@
               {
                 "type": "SYMBOL",
                 "name": "identifier"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "_contextual_identifier"
               },
               {
                 "type": "SYMBOL",
@@ -9709,8 +9756,17 @@
       "type": "SEQ",
       "members": [
         {
-          "type": "SYMBOL",
-          "name": "identifier"
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "SYMBOL",
+              "name": "identifier"
+            },
+            {
+              "type": "SYMBOL",
+              "name": "_contextual_identifier"
+            }
+          ]
         },
         {
           "type": "STRING",
@@ -10548,11 +10604,42 @@
       "named": true,
       "value": "identifier"
     },
+    "_contextual_identifier": {
+      "type": "ALIAS",
+      "content": {
+        "type": "CHOICE",
+        "members": [
+          {
+            "type": "STRING",
+            "value": "auto"
+          },
+          {
+            "type": "STRING",
+            "value": "safe"
+          }
+        ]
+      },
+      "named": true,
+      "value": "identifier"
+    },
     "_type_identifier": {
       "type": "ALIAS",
       "content": {
-        "type": "SYMBOL",
-        "name": "identifier"
+        "type": "CHOICE",
+        "members": [
+          {
+            "type": "SYMBOL",
+            "name": "identifier"
+          },
+          {
+            "type": "STRING",
+            "value": "auto"
+          },
+          {
+            "type": "STRING",
+            "value": "safe"
+          }
+        ]
       },
       "named": true,
       "value": "type_identifier"
@@ -10685,6 +10772,7 @@
     "_non_special_token",
     "_declaration_statement",
     "_reserved_identifier",
+    "_contextual_identifier",
     "_expression_ending_with_block",
     "_const_trait_bound"
   ],
