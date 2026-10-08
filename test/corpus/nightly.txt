@@ -1,0 +1,863 @@
+================================================================================
+Const trait impls
+================================================================================
+
+const impl<K, V, S> Default for HashMap<K, V, S> {
+    fn default() -> Self {}
+}
+
+const unsafe impl Allocator for Global {}
+
+impl<T> const Default for Foo<T> {}
+
+const fn f() {}
+
+const unsafe fn g() {}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (impl_item
+    type_parameters: (type_parameters
+      (type_parameter
+        name: (type_identifier))
+      (type_parameter
+        name: (type_identifier))
+      (type_parameter
+        name: (type_identifier)))
+    trait: (type_identifier)
+    type: (generic_type
+      type: (type_identifier)
+      type_arguments: (type_arguments
+        (type_identifier)
+        (type_identifier)
+        (type_identifier)))
+    body: (declaration_list
+      (function_item
+        name: (identifier)
+        parameters: (parameters)
+        return_type: (type_identifier)
+        body: (block))))
+  (impl_item
+    trait: (type_identifier)
+    type: (type_identifier)
+    body: (declaration_list))
+  (impl_item
+    type_parameters: (type_parameters
+      (type_parameter
+        name: (type_identifier)))
+    trait: (type_identifier)
+    type: (generic_type
+      type: (type_identifier)
+      type_arguments: (type_arguments
+        (type_identifier)))
+    body: (declaration_list))
+  (function_item
+    (function_modifiers)
+    name: (identifier)
+    parameters: (parameters)
+    body: (block))
+  (function_item
+    (function_modifiers)
+    name: (identifier)
+    parameters: (parameters)
+    body: (block)))
+
+================================================================================
+Const traits
+================================================================================
+
+pub const trait Default: Sized {}
+
+pub const unsafe trait Allocator {}
+
+pub(crate) const trait Step: [const] Clone + [const] PartialOrd + Sized {}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (trait_item
+    (visibility_modifier)
+    name: (type_identifier)
+    bounds: (trait_bounds
+      (type_identifier))
+    body: (declaration_list))
+  (trait_item
+    (visibility_modifier)
+    name: (type_identifier)
+    body: (declaration_list))
+  (trait_item
+    (visibility_modifier
+      (crate))
+    name: (type_identifier)
+    bounds: (trait_bounds
+      (type_identifier)
+      (type_identifier)
+      (type_identifier))
+    body: (declaration_list)))
+
+================================================================================
+Impl restrictions
+================================================================================
+
+pub impl(self) trait FloatToInt<Int>: Sized {}
+
+pub impl(crate) unsafe trait SimdElement: Copy {}
+
+pub impl(in crate::os) trait SocketAddrExt {}
+
+pub impl(super) const trait TruncateTarget<Target> {}
+
+impl(crate) trait Sealed {}
+
+impl () {}
+
+impl (i32) {}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (trait_item
+    (visibility_modifier)
+    (impl_restriction
+      (self))
+    name: (type_identifier)
+    type_parameters: (type_parameters
+      (type_parameter
+        name: (type_identifier)))
+    bounds: (trait_bounds
+      (type_identifier))
+    body: (declaration_list))
+  (trait_item
+    (visibility_modifier)
+    (impl_restriction
+      (crate))
+    name: (type_identifier)
+    bounds: (trait_bounds
+      (type_identifier))
+    body: (declaration_list))
+  (trait_item
+    (visibility_modifier)
+    (impl_restriction
+      (scoped_identifier
+        path: (crate)
+        name: (identifier)))
+    name: (type_identifier)
+    body: (declaration_list))
+  (trait_item
+    (visibility_modifier)
+    (impl_restriction
+      (super))
+    name: (type_identifier)
+    type_parameters: (type_parameters
+      (type_parameter
+        name: (type_identifier)))
+    body: (declaration_list))
+  (trait_item
+    (impl_restriction
+      (crate))
+    name: (type_identifier)
+    body: (declaration_list))
+  (impl_item
+    type: (unit_type)
+    body: (declaration_list))
+  (impl_item
+    type: (tuple_type
+      (primitive_type))
+    body: (declaration_list)))
+
+================================================================================
+Auto traits
+================================================================================
+
+auto trait Sync {}
+
+pub unsafe auto trait DynSend {}
+
+fn f(auto: bool) {
+    let auto = 1;
+    auto = 2;
+    auto.method();
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (trait_item
+    name: (type_identifier)
+    body: (declaration_list))
+  (trait_item
+    (visibility_modifier)
+    name: (type_identifier)
+    body: (declaration_list))
+  (function_item
+    name: (identifier)
+    parameters: (parameters
+      (parameter
+        pattern: (identifier)
+        type: (primitive_type)))
+    body: (block
+      (let_declaration
+        pattern: (identifier)
+        value: (integer_literal))
+      (expression_statement
+        (assignment_expression
+          left: (identifier)
+          right: (integer_literal)))
+      (expression_statement
+        (call_expression
+          function: (field_expression
+            value: (identifier)
+            field: (field_identifier))
+          arguments: (arguments))))))
+
+================================================================================
+Trait aliases
+================================================================================
+
+pub trait Thin = Pointee<Metadata = ()> + PointeeSized;
+
+pub trait Machine<'tcx> = Base<'tcx> + 'static where Self: Sized;
+
+trait Sendable = where for<'b> &'b Self: Send;
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (trait_alias_item
+    (visibility_modifier)
+    name: (type_identifier)
+    bounds: (trait_bounds
+      (generic_type
+        type: (type_identifier)
+        type_arguments: (type_arguments
+          (type_binding
+            name: (type_identifier)
+            type: (unit_type))))
+      (type_identifier)))
+  (trait_alias_item
+    (visibility_modifier)
+    name: (type_identifier)
+    type_parameters: (type_parameters
+      (lifetime_parameter
+        name: (lifetime
+          (identifier))))
+    bounds: (trait_bounds
+      (generic_type
+        type: (type_identifier)
+        type_arguments: (type_arguments
+          (lifetime
+            (identifier))))
+      (lifetime
+        (identifier)))
+    (where_clause
+      (where_predicate
+        left: (type_identifier)
+        bounds: (trait_bounds
+          (type_identifier)))))
+  (trait_alias_item
+    name: (type_identifier)
+    (where_clause
+      (where_predicate
+        left: (higher_ranked_trait_bound
+          type_parameters: (type_parameters
+            (lifetime_parameter
+              name: (lifetime
+                (identifier))))
+          type: (reference_type
+            (lifetime
+              (identifier))
+            type: (type_identifier)))
+        bounds: (trait_bounds
+          (type_identifier))))))
+
+================================================================================
+Macros 2.0
+================================================================================
+
+pub macro ready($e:expr) {
+    $e
+}
+
+pub(crate) macro panic_2015 {
+    () => (
+        panic("explicit panic")
+    ),
+    ($msg:expr $(,)?) => ({
+        panic($msg);
+    }),
+}
+
+macro empty {}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (macro_definition
+    (visibility_modifier)
+    name: (identifier)
+    (macro_rule
+      left: (token_tree_pattern
+        (token_binding_pattern
+          name: (metavariable)
+          type: (fragment_specifier)))
+      right: (token_tree
+        (metavariable))))
+  (macro_definition
+    (visibility_modifier
+      (crate))
+    name: (identifier)
+    (macro_rule
+      left: (token_tree_pattern)
+      right: (token_tree
+        (identifier)
+        (token_tree
+          (string_literal
+            (string_content)))))
+    (macro_rule
+      left: (token_tree_pattern
+        (token_binding_pattern
+          name: (metavariable)
+          type: (fragment_specifier))
+        (token_repetition_pattern))
+      right: (token_tree
+        (token_tree
+          (identifier)
+          (token_tree
+            (metavariable))))))
+  (macro_definition
+    name: (identifier)))
+
+================================================================================
+Constness modifiers of trait bounds
+================================================================================
+
+pub const fn take<T: [const] Default>(dest: &mut T) -> T {}
+
+pub const fn is_some_and(f: impl [const] FnOnce(T) -> bool + [const] Destruct) {}
+
+fn bsll<T: Copy + const SimdExt>(a: T) where F: ~const Drop + ?Sized {}
+
+fn ptr<T>(f: const fn()) {}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_item
+    (visibility_modifier)
+    (function_modifiers)
+    name: (identifier)
+    type_parameters: (type_parameters
+      (type_parameter
+        name: (type_identifier)
+        bounds: (trait_bounds
+          (type_identifier))))
+    parameters: (parameters
+      (parameter
+        pattern: (identifier)
+        type: (reference_type
+          (mutable_specifier)
+          type: (type_identifier))))
+    return_type: (type_identifier)
+    body: (block))
+  (function_item
+    (visibility_modifier)
+    (function_modifiers)
+    name: (identifier)
+    parameters: (parameters
+      (parameter
+        pattern: (identifier)
+        type: (bounded_type
+          (abstract_type
+            trait: (function_type
+              trait: (type_identifier)
+              parameters: (parameters
+                (type_identifier))
+              return_type: (primitive_type)))
+          (type_identifier))))
+    body: (block))
+  (function_item
+    name: (identifier)
+    type_parameters: (type_parameters
+      (type_parameter
+        name: (type_identifier)
+        bounds: (trait_bounds
+          (type_identifier)
+          (type_identifier))))
+    parameters: (parameters
+      (parameter
+        pattern: (identifier)
+        type: (type_identifier)))
+    (where_clause
+      (where_predicate
+        left: (type_identifier)
+        bounds: (trait_bounds
+          (type_identifier)
+          (removed_trait_bound
+            (type_identifier)))))
+    body: (block))
+  (function_item
+    name: (identifier)
+    type_parameters: (type_parameters
+      (type_parameter
+        name: (type_identifier)))
+    parameters: (parameters
+      (parameter
+        pattern: (identifier)
+        type: (function_type
+          (function_modifiers)
+          parameters: (parameters))))
+    body: (block)))
+
+================================================================================
+Safe items and extern types in extern blocks
+================================================================================
+
+unsafe extern "C" {
+    safe fn abort() -> !;
+    pub(crate) safe fn cbrt(x: f64) -> f64;
+    pub safe static VAL: u8;
+    unsafe static ERRNO: i32;
+    pub type RustString;
+}
+
+fn f() {
+    let safe = true;
+    safe = false;
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (foreign_mod_item
+    (extern_modifier
+      (string_literal
+        (string_content)))
+    body: (declaration_list
+      (function_signature_item
+        (function_modifiers)
+        name: (identifier)
+        parameters: (parameters)
+        return_type: (never_type))
+      (function_signature_item
+        (visibility_modifier
+          (crate))
+        (function_modifiers)
+        name: (identifier)
+        parameters: (parameters
+          (parameter
+            pattern: (identifier)
+            type: (primitive_type)))
+        return_type: (primitive_type))
+      (static_item
+        (visibility_modifier)
+        name: (identifier)
+        type: (primitive_type))
+      (static_item
+        name: (identifier)
+        type: (primitive_type))
+      (associated_type
+        (visibility_modifier)
+        name: (type_identifier))))
+  (function_item
+    name: (identifier)
+    parameters: (parameters)
+    body: (block
+      (let_declaration
+        pattern: (identifier)
+        value: (boolean_literal))
+      (expression_statement
+        (assignment_expression
+          left: (identifier)
+          right: (boolean_literal))))))
+
+================================================================================
+Final associated functions
+================================================================================
+
+trait SizeHint {
+    final fn size_hint(&self) -> usize {
+        0
+    }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (trait_item
+    name: (type_identifier)
+    body: (declaration_list
+      (function_item
+        (function_modifiers)
+        name: (identifier)
+        parameters: (parameters
+          (self_parameter
+            (self)))
+        return_type: (primitive_type)
+        body: (block
+          (integer_literal))))))
+
+================================================================================
+Associated type defaults
+================================================================================
+
+trait Visitor {
+    type Result: VisitorResult = ();
+    type Direction: Direction where Self: Sized = Forward;
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (trait_item
+    name: (type_identifier)
+    body: (declaration_list
+      (associated_type
+        name: (type_identifier)
+        bounds: (trait_bounds
+          (type_identifier))
+        default_type: (unit_type))
+      (associated_type
+        name: (type_identifier)
+        bounds: (trait_bounds
+          (type_identifier))
+        (where_clause
+          (where_predicate
+            left: (type_identifier)
+            bounds: (trait_bounds
+              (type_identifier))))
+        default_type: (type_identifier)))))
+
+================================================================================
+Default field values
+================================================================================
+
+pub struct Parser {
+    pub token: Token = Token::dummy(),
+    count: usize,
+}
+
+fn f() {
+    let p = Parser { count: 1, .. };
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (struct_item
+    (visibility_modifier)
+    name: (type_identifier)
+    body: (field_declaration_list
+      (field_declaration
+        (visibility_modifier)
+        name: (field_identifier)
+        type: (type_identifier)
+        default_value: (call_expression
+          function: (scoped_identifier
+            path: (identifier)
+            name: (identifier))
+          arguments: (arguments)))
+      (field_declaration
+        name: (field_identifier)
+        type: (primitive_type))))
+  (function_item
+    name: (identifier)
+    parameters: (parameters)
+    body: (block
+      (let_declaration
+        pattern: (identifier)
+        value: (struct_expression
+          name: (type_identifier)
+          body: (field_initializer_list
+            (field_initializer
+              field: (field_identifier)
+              value: (integer_literal))
+            (base_field_initializer)))))))
+
+================================================================================
+Super let and attributes on let values
+================================================================================
+
+fn f() {
+    super let x = g();
+    let w = #[cold] || 1;
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_item
+    name: (identifier)
+    parameters: (parameters)
+    body: (block
+      (let_declaration
+        (super)
+        pattern: (identifier)
+        value: (call_expression
+          function: (identifier)
+          arguments: (arguments)))
+      (let_declaration
+        pattern: (identifier)
+        (attribute_item
+          (attribute
+            (identifier)))
+        value: (closure_expression
+          parameters: (closure_parameters)
+          body: (integer_literal))))))
+
+================================================================================
+Const closures
+================================================================================
+
+fn f() {
+    let a = from_fn(const |i| i + 4);
+    let b = const move || ();
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_item
+    name: (identifier)
+    parameters: (parameters)
+    body: (block
+      (let_declaration
+        pattern: (identifier)
+        value: (call_expression
+          function: (identifier)
+          arguments: (arguments
+            (closure_expression
+              parameters: (closure_parameters
+                (identifier))
+              body: (binary_expression
+                left: (identifier)
+                right: (integer_literal))))))
+      (let_declaration
+        pattern: (identifier)
+        value: (closure_expression
+          parameters: (closure_parameters)
+          body: (unit_expression))))))
+
+================================================================================
+Yeet expressions
+================================================================================
+
+fn f() {
+    do yeet ModError::CircularInclusion;
+    do yeet;
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_item
+    name: (identifier)
+    parameters: (parameters)
+    body: (block
+      (expression_statement
+        (yeet_expression
+          (scoped_identifier
+            path: (identifier)
+            name: (identifier))))
+      (expression_statement
+        (yeet_expression)))))
+
+================================================================================
+Metavariable expressions
+================================================================================
+
+macro_rules! m {
+    ($($name:ident),*) => {
+        $(fn ${concat($name, _impl)}() -> usize { ${index()} })*
+        $(${ignore($name)} x)*
+    };
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (macro_definition
+    name: (identifier)
+    (macro_rule
+      left: (token_tree_pattern
+        (token_repetition_pattern
+          (token_binding_pattern
+            name: (metavariable)
+            type: (fragment_specifier))))
+      right: (token_tree
+        (token_repetition
+          (token_tree
+            (identifier)
+            (token_tree
+              (metavariable)
+              (identifier)))
+          (token_tree)
+          (primitive_type)
+          (token_tree
+            (token_tree
+              (identifier)
+              (token_tree))))
+        (token_repetition
+          (token_tree
+            (identifier)
+            (token_tree
+              (metavariable)))
+          (identifier))))))
+
+================================================================================
+Attribute and derive macro rules
+================================================================================
+
+macro_rules! AllVariants {
+    attr($($args:tt)*) ($($item:tt)*) => {};
+    derive() ($vis:vis enum $Type:ident {}) => {};
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (macro_definition
+    name: (identifier)
+    (macro_rule
+      arguments: (token_tree_pattern
+        (token_repetition_pattern
+          (token_binding_pattern
+            name: (metavariable)
+            type: (fragment_specifier))))
+      left: (token_tree_pattern
+        (token_repetition_pattern
+          (token_binding_pattern
+            name: (metavariable)
+            type: (fragment_specifier))))
+      right: (token_tree))
+    (macro_rule
+      arguments: (token_tree_pattern)
+      left: (token_tree_pattern
+        (token_binding_pattern
+          name: (metavariable)
+          type: (fragment_specifier))
+        (token_binding_pattern
+          name: (metavariable)
+          type: (fragment_specifier))
+        (token_tree_pattern))
+      right: (token_tree))))
+
+================================================================================
+Float suffixes on integer literals
+================================================================================
+
+let ones = [1f16; 512];
+let zero = 0_f128;
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_declaration
+    pattern: (identifier)
+    value: (array_expression
+      (integer_literal)
+      length: (integer_literal)))
+  (let_declaration
+    pattern: (identifier)
+    value: (integer_literal)))
+
+================================================================================
+Tildes in token trees
+================================================================================
+
+impl_vec_trait! { [VectorAnd vec_and] ~(simd_and) }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (macro_invocation
+    macro: (identifier)
+    (token_tree
+      (token_tree
+        (identifier)
+        (identifier))
+      (token_tree
+        (identifier)))))
+
+================================================================================
+Box patterns
+================================================================================
+
+match x {
+    box (place, _) => {}
+    box Call { args, .. } | box _ => {}
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (expression_statement
+    (match_expression
+      value: (identifier)
+      body: (match_block
+        (match_arm
+          pattern: (match_pattern
+            (box_pattern
+              (tuple_pattern
+                (identifier))))
+          value: (block))
+        (match_arm
+          pattern: (match_pattern
+            (or_pattern
+              (box_pattern
+                (struct_pattern
+                  type: (type_identifier)
+                  (field_pattern
+                    name: (shorthand_field_identifier))
+                  (remaining_field_pattern)))
+              (box_pattern)))
+          value: (block))))))
+
+================================================================================
+Attributes on struct pattern fields
+================================================================================
+
+let Exec {
+    stdout,
+    #[cfg(feature = "tracing")]
+    span_guard,
+    ..
+} = exec;
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_declaration
+    pattern: (struct_pattern
+      type: (type_identifier)
+      (field_pattern
+        name: (shorthand_field_identifier))
+      (attribute_item
+        (attribute
+          (identifier)
+          arguments: (token_tree
+            (identifier)
+            (string_literal
+              (string_content)))))
+      (field_pattern
+        name: (shorthand_field_identifier))
+      (remaining_field_pattern))
+    value: (identifier)))
+
+================================================================================
+Negative literals as const arguments
+================================================================================
+
+s_barrier_signal::<-1>();
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (expression_statement
+    (call_expression
+      function: (generic_function
+        function: (identifier)
+        type_arguments: (type_arguments
+          (negative_literal
+            (integer_literal))))
+      arguments: (arguments))))

@@ -52,10 +52,18 @@ const TOKEN_TREE_NON_SPECIAL_PUNCTUATION = [
   '+', '-', '*', '/', '%', '^', '!', '&', '|', '&&', '||', '<<',
   '>>', '+=', '-=', '*=', '/=', '%=', '^=', '&=', '|=', '<<=',
   '>>=', '=', '==', '!=', '>', '<', '>=', '<=', '@', '_', '.',
-  '..', '...', '..=', ',', ';', ':', '::', '->', '=>', '#', '?',
+  '..', '...', '..=', ',', ';', ':', '::', '->', '=>', '#', '?', '~',
 ];
 
 const primitiveTypes = numericTypes.concat(['bool', 'str', 'char']);
+
+// Integer literal suffixes: the numeric types plus the float types that are not
+// (yet) primitive types of this grammar, so `1f16` stays one literal.
+const integerSuffixes = numericTypes.concat(['f16', 'f128']);
+
+// The maybe-const modifier of a trait bound, `[const] Trait`, or its older
+// spelling `~const Trait`, kept as anonymous tokens before the bound.
+const maybeConstModifier = choice(seq('[', 'const', ']'), seq('~', 'const'));
 
 module.exports = grammar({
   name: 'rust',
@@ -98,6 +106,7 @@ module.exports = grammar({
     $._declaration_statement,
     $._reserved_identifier,
     $._expression_ending_with_block,
+    $._const_trait_bound,
   ],
 
   conflicts: $ => [
@@ -111,7 +120,6 @@ module.exports = grammar({
     [$.array_expression],
     [$.visibility_modifier],
     [$.visibility_modifier, $.scoped_identifier, $.scoped_type_identifier],
-    [$.foreign_mod_item, $.function_modifiers],
   ],
 
   word: $ => $.identifier,
@@ -151,6 +159,7 @@ module.exports = grammar({
       $.function_signature_item,
       $.impl_item,
       $.trait_item,
+      $.trait_alias_item,
       $.associated_type,
       $.let_declaration,
       $.use_declaration,
@@ -166,21 +175,48 @@ module.exports = grammar({
         optional($.macro_rule),
       );
 
-      return seq(
-        'macro_rules!',
-        field('name', choice(
-          $.identifier,
-          $._reserved_identifier,
-        )),
-        choice(
-          seq('(', rules, ')', ';'),
-          seq('[', rules, ']', ';'),
-          seq('{', rules, '}'),
+      return choice(
+        seq(
+          'macro_rules!',
+          field('name', choice(
+            $.identifier,
+            $._reserved_identifier,
+          )),
+          choice(
+            seq('(', rules, ')', ';'),
+            seq('[', rules, ']', ';'),
+            seq('{', rules, '}'),
+          ),
+        ),
+        // Macros 2.0 (`decl_macro`): `macro name(params) { body }` is one rule
+        // without `=>`; `macro name { (a) => { b }, … }` separates its rules
+        // with commas.
+        seq(
+          optional($.visibility_modifier),
+          'macro',
+          field('name', $.identifier),
+          choice(
+            alias($._macro_single_rule, $.macro_rule),
+            seq('{', sepBy(',', $.macro_rule), optional(','), '}'),
+          ),
         ),
       );
     },
 
+    _macro_single_rule: $ => seq(
+      field('left', alias($._macro_parameters, $.token_tree_pattern)),
+      field('right', $.token_tree),
+    ),
+
+    _macro_parameters: $ => seq('(', repeat($._token_pattern), ')'),
+
     macro_rule: $ => seq(
+      // An attribute or derive rule (`macro_attr`, `macro_derive`):
+      // `attr(args) (item) => { … }`, `derive() (item) => { … }`.
+      optional(seq(
+        choice('attr', 'derive'),
+        field('arguments', alias($._macro_parameters, $.token_tree_pattern)),
+      )),
       field('left', $.token_tree_pattern),
       '=>',
       field('right', $.token_tree),
@@ -220,6 +256,8 @@ module.exports = grammar({
       $.token_repetition,
       $.metavariable,
       $._non_special_token,
+      // A metavariable expression (`macro_metavar_expr`): `${index()}`.
+      seq('$', alias($._metavariable_expression_body, $.token_tree)),
     ),
 
     token_tree: $ => choice(
@@ -227,6 +265,8 @@ module.exports = grammar({
       seq('[', repeat($._tokens), ']'),
       seq('{', repeat($._tokens), '}'),
     ),
+
+    _metavariable_expression_body: $ => seq('{', repeat($._tokens), '}'),
 
     token_repetition: $ => seq(
       '$', '(', repeat($._tokens), ')', optional(/[^+*?]+/), choice('+', '*', '?'),
@@ -364,6 +404,8 @@ module.exports = grammar({
       field('name', $._field_identifier),
       ':',
       field('type', $._type),
+      // A default field value (`default_field_values`).
+      optional(seq('=', field('default_value', $._expression))),
     ),
 
     ordered_field_declaration_list: $ => seq(
@@ -406,6 +448,8 @@ module.exports = grammar({
 
     static_item: $ => seq(
       optional($.visibility_modifier),
+      // An item of an `unsafe extern` block.
+      optional(choice('safe', 'unsafe')),
       'static',
 
       // Not actual rust syntax, but made popular by the lazy_static crate.
@@ -458,13 +502,23 @@ module.exports = grammar({
       ';',
     ),
 
-    function_modifiers: $ => repeat1(choice(
-      'async',
-      'default',
-      'const',
-      'unsafe',
-      $.extern_modifier,
-    )),
+    // `final` (`final_associated_functions`) and `safe` (an item of an `unsafe
+    // extern` block) join the modifiers. The first modifier is a token of this
+    // rule rather than a repetition item, so `const` needs no reduction before
+    // `unsafe` shows whether `fn`, `trait` or `impl` follows (`const unsafe
+    // trait`, `const unsafe impl`); `unsafe extern` needs no conflict either.
+    function_modifiers: $ => {
+      const modifier = choice(
+        'async',
+        'default',
+        'final',
+        'const',
+        'unsafe',
+        'safe',
+        $.extern_modifier,
+      );
+      return seq(modifier, repeat(modifier));
+    },
 
     where_clause: $ => prec.right(seq(
       'where',
@@ -491,10 +545,14 @@ module.exports = grammar({
     ),
 
     impl_item: $ => seq(
+      // A const trait impl (`const_trait_impl`): `const impl Trait for Type`.
+      optional('const'),
       optional('unsafe'),
       'impl',
       field('type_parameters', optional($.type_parameters)),
       optional(seq(
+        // The older `impl const Trait for Type` spelling of `const impl`.
+        optional('const'),
         optional('!'),
         field('trait', choice(
           $._type_identifier,
@@ -510,7 +568,11 @@ module.exports = grammar({
 
     trait_item: $ => seq(
       optional($.visibility_modifier),
+      optional($.impl_restriction),
+      // A const trait (`const_trait_impl`) and an auto trait (`auto_traits`).
+      optional('const'),
       optional('unsafe'),
+      optional('auto'),
       'trait',
       field('name', $._type_identifier),
       field('type_parameters', optional($.type_parameters)),
@@ -519,13 +581,62 @@ module.exports = grammar({
       field('body', $.declaration_list),
     ),
 
+    // An `impl` restriction (`impl_restriction`): `pub impl(crate) trait`.
+    impl_restriction: $ => seq(
+      'impl',
+      '(',
+      choice(
+        $.self,
+        $.super,
+        $.crate,
+        seq('in', $._path),
+      ),
+      ')',
+    ),
+
+    // A trait alias (`trait_alias`): `trait Name<T> = Bound + Bound where …;`.
+    trait_alias_item: $ => seq(
+      optional($.visibility_modifier),
+      optional('const'),
+      'trait',
+      field('name', $._type_identifier),
+      field('type_parameters', optional($.type_parameters)),
+      '=',
+      field('bounds', optional(alias($._trait_alias_bounds, $.trait_bounds))),
+      optional($.where_clause),
+      ';',
+    ),
+
+    _trait_alias_bounds: $ => sepBy1('+', choice(
+      $._type,
+      $.lifetime,
+      $.higher_ranked_trait_bound,
+      $._const_trait_bound,
+    )),
+
     associated_type: $ => seq(
+      // A visibility only for an extern type (`extern_types`) of an extern
+      // block: `pub type Opaque;`.
+      optional($.visibility_modifier),
       'type',
       field('name', $._type_identifier),
       field('type_parameters', optional($.type_parameters)),
-      field('bounds', optional($.trait_bounds)),
-      optional($.where_clause),
-      ';',
+      choice(
+        seq(
+          field('bounds', optional($.trait_bounds)),
+          optional($.where_clause),
+          ';',
+        ),
+        // A default (`associated_type_defaults`): `type Item: Bound = Type;`.
+        seq(
+          field('bounds', $.trait_bounds),
+          optional($.where_clause),
+          '=',
+          field('default_type', $._type),
+          optional($.where_clause),
+          ';',
+        ),
+      ),
     ),
 
     trait_bounds: $ => seq(
@@ -534,6 +645,19 @@ module.exports = grammar({
         $._type,
         $.lifetime,
         $.higher_ranked_trait_bound,
+        $._const_trait_bound,
+      )),
+    ),
+
+    // A bound with a constness modifier (`const_trait_impl`): `[const] Trait`,
+    // `~const Trait` or `const Trait`; the modifier stays anonymous tokens. A
+    // bare `const` takes only a trait path, leaving `const fn()` a fn pointer.
+    _const_trait_bound: $ => choice(
+      seq(maybeConstModifier, $._type),
+      seq('const', choice(
+        $._type_identifier,
+        $.scoped_type_identifier,
+        $.generic_type,
       )),
     ),
 
@@ -600,6 +724,8 @@ module.exports = grammar({
     )),
 
     let_declaration: $ => seq(
+      // `super let` (`super_let`).
+      optional($.super),
       'let',
       optional($.mutable_specifier),
       field('pattern', $._pattern),
@@ -609,6 +735,8 @@ module.exports = grammar({
       )),
       optional(seq(
         '=',
+        // Attributes on the value (`stmt_expr_attributes`): `= #[cold] || …`.
+        repeat($.attribute_item),
         field('value', $._expression),
       )),
       optional(seq(
@@ -837,7 +965,7 @@ module.exports = grammar({
     bounded_type: $ => prec.left(-1, seq(
       choice($.lifetime, $._type, $.use_bounds),
       '+',
-      choice($.lifetime, $._type, $.use_bounds),
+      choice($.lifetime, $._type, $.use_bounds, $._const_trait_bound),
     )),
 
     use_bounds: $ => seq(
@@ -862,6 +990,7 @@ module.exports = grammar({
           $.type_binding,
           $.lifetime,
           $._literal,
+          $.negative_literal,
           $.block,
         ),
         optional($.trait_bounds),
@@ -895,6 +1024,7 @@ module.exports = grammar({
     abstract_type: $ => seq(
       'impl',
       optional(seq('for', $.type_parameters)),
+      optional(maybeConstModifier),
       field('trait', prec(1, choice(
         $._type_identifier,
         $.scoped_type_identifier,
@@ -933,6 +1063,7 @@ module.exports = grammar({
       $.call_expression,
       $.return_expression,
       $.yield_expression,
+      $.yeet_expression,
       $._literal,
       prec.left($.identifier),
       alias(choice(...primitiveTypes), $.identifier),
@@ -1108,6 +1239,12 @@ module.exports = grammar({
       prec(-1, 'yield'),
     ),
 
+    // `do yeet` (`yeet_expr`).
+    yeet_expression: $ => choice(
+      prec.left(seq('do', 'yeet', $._expression)),
+      prec(-1, seq('do', 'yeet')),
+    ),
+
     call_expression: $ => prec(PREC.call, seq(
       field('function', $._expression_except_range),
       field('arguments', $.arguments),
@@ -1188,7 +1325,8 @@ module.exports = grammar({
 
     base_field_initializer: $ => seq(
       '..',
-      $._expression,
+      // Bare `..` takes the default field values (`default_field_values`).
+      optional($._expression),
     ),
 
     if_expression: $ => prec.right(seq(
@@ -1293,6 +1431,8 @@ module.exports = grammar({
     ),
 
     closure_expression: $ => prec(PREC.closure, seq(
+      // A const closure (`const_closures`).
+      optional('const'),
       optional('static'),
       optional('async'),
       optional('move'),
@@ -1384,6 +1524,7 @@ module.exports = grammar({
       $.slice_pattern,
       $.captured_pattern,
       $.reference_pattern,
+      $.box_pattern,
       $.remaining_field_pattern,
       $.mut_pattern,
       $.range_pattern,
@@ -1434,7 +1575,10 @@ module.exports = grammar({
         $.scoped_type_identifier,
       )),
       '{',
-      sepBy(',', choice($.field_pattern, $.remaining_field_pattern)),
+      sepBy(',', seq(
+        repeat($.attribute_item),
+        choice($.field_pattern, $.remaining_field_pattern),
+      )),
       optional(','),
       '}',
     ),
@@ -1502,6 +1646,12 @@ module.exports = grammar({
       $._pattern,
     ),
 
+    // `box` pattern (`box_patterns`).
+    box_pattern: $ => seq(
+      'box',
+      $._pattern,
+    ),
+
     or_pattern: $ => prec.left(-2, choice(
       seq($._pattern, '|', $._pattern),
       seq('|', $._pattern),
@@ -1537,7 +1687,7 @@ module.exports = grammar({
         /0b[01_]+/,
         /0o[0-7_]+/,
       ),
-      optional(choice(...numericTypes)),
+      optional(choice(...integerSuffixes)),
     )),
 
     string_literal: $ => seq(
@@ -1649,11 +1799,15 @@ module.exports = grammar({
 
     shebang: _ => /#![\r\f\t\v ]*([^\[\n].*)?\n/,
 
+    // Contextual keywords that stay identifiers wherever an identifier may be:
+    // `auto` (`auto trait`) and `safe` (`safe fn` of an `unsafe extern` block).
     _reserved_identifier: $ => alias(choice(
       'default',
       'union',
       'gen',
       'raw',
+      'auto',
+      'safe',
     ), $.identifier),
 
     _type_identifier: $ => alias($.identifier, $.type_identifier),
